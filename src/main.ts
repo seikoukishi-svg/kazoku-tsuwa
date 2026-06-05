@@ -4,6 +4,7 @@ import {
   collection,
   addDoc,
   getDocs,
+  getDoc,
   deleteDoc,
   updateDoc,
   onSnapshot,
@@ -16,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
-import { db, authReady, isConfigured } from "./firebase";
+import { db, auth, authReady, isConfigured } from "./firebase";
 
 // ===== 家族メンバー（固定）=====
 type Member = { id: string; name: string };
@@ -33,6 +34,8 @@ const STALE_MS = 2 * 60 * 60 * 1000;
 const ICE: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
+
+const PUSH_WORKER_URL = "https://kazoku-tsuwa-sender.kazoku-tsuwa.workers.dev";
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T;
@@ -197,6 +200,39 @@ function enterCallUI(otherId: string) {
 }
 
 // ===== 発信（自分→相手）=====
+async function sendIncomingPush(targetId: string) {
+  if (!myId) return;
+  try {
+    const tokenSnap = await getDoc(doc(db, "tokens", targetId));
+    const toToken = tokenSnap.data()?.token;
+    if (typeof toToken !== "string" || !toToken) {
+      console.warn("push token not found", targetId);
+      return;
+    }
+
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) {
+      console.warn("Firebase ID token is not ready");
+      return;
+    }
+
+    const res = await fetch(PUSH_WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idToken,
+        toToken,
+        fromName: nameOf(myId),
+      }),
+    });
+
+    if (!res.ok) {
+      console.warn("incoming push failed", await res.text());
+    }
+  } catch (e) {
+    console.warn("incoming push failed", e);
+  }
+}
 async function callTo(targetId: string) {
   clearError();
   if (!myId) return;
@@ -250,6 +286,7 @@ async function callTo(targetId: string) {
   const offer = await pc!.createOffer();
   await pc!.setLocalDescription(offer);
   await updateDoc(callRef, { offer: { type: offer.type, sdp: offer.sdp } });
+  void sendIncomingPush(targetId);
 
   callUnsub = onSnapshot(callRef, (snap) => {
     if (!snap.exists()) {
