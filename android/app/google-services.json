@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "790638405167",
+    "project_id": "kazoku-tsuwa-1330313604",
+    "storage_bucket": "kazoku-tsuwa-1330313604.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:790638405167:android:4bd68d22de9d36f0e988da",
+        "android_client_info": {
+          "package_name": "com.kazoku.tsuwa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC7GfE_4JvJdEOhjPbTiwzcYtd1EQaB3DI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -9,10 +9,13 @@ import {
   onSnapshot,
   runTransaction,
   serverTimestamp,
+  setDoc,
   type DocumentData,
   type DocumentReference,
   type Unsubscribe,
 } from "firebase/firestore";
+import { Capacitor } from "@capacitor/core";
+import { PushNotifications } from "@capacitor/push-notifications";
 import { db, authReady, isConfigured } from "./firebase";
 
 // ===== 家族メンバー（固定）=====
@@ -441,6 +444,44 @@ function goHome() {
   renderContacts();
   showPanel("home-panel");
   if (!incomingUnsub) startIncomingListener();
+  void setupPush();
+  saveToken();
+}
+
+// ===== プッシュ通知（FCM）：受信用トークンを取得して Firestore に保存 =====
+let pushReady = false;
+let lastPushToken: string | null = null;
+
+function saveToken() {
+  if (!lastPushToken || !myId) return;
+  void setDoc(doc(db, "tokens", myId), {
+    token: lastPushToken,
+    platform: "android",
+    updatedAt: serverTimestamp(),
+  });
+}
+
+async function setupPush() {
+  if (!Capacitor.isNativePlatform() || pushReady) return;
+  pushReady = true;
+  try {
+    await PushNotifications.addListener("registration", (t) => {
+      lastPushToken = t.value;
+      saveToken();
+    });
+    await PushNotifications.addListener("registrationError", (e) => {
+      console.warn("push registration error", e);
+    });
+    let perm = await PushNotifications.checkPermissions();
+    if (perm.receive === "prompt") {
+      perm = await PushNotifications.requestPermissions();
+    }
+    if (perm.receive === "granted") {
+      await PushNotifications.register();
+    }
+  } catch (e) {
+    console.warn("setupPush failed", e);
+  }
 }
 
 function restartIncoming() {

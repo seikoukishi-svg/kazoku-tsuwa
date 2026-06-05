@@ -13,6 +13,7 @@
   "dependencies": {
     "@capacitor/android": "^8.4.0",
     "@capacitor/core": "^8.4.0",
+    "@capacitor/push-notifications": "^8.1.1",
     "firebase": "^12.14.0",
     "ws": "^8.18.0"
   },

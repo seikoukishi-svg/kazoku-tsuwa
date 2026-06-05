@@ -7,5 +7,9 @@ service cloud.firestore {
     match /calls/{calleeId}/{document=**} {
       allow read, write: if request.auth != null;
     }
+    // 各メンバーのFCM受信トークン（着信送信サーバが宛先解決に使う）。
+    match /tokens/{memberId} {
+      allow read, write: if request.auth != null;
+    }
   }
 }
