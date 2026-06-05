@@ -1,0 +1,12 @@
+{
+  "name": "kazoku-tsuwa-sender",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "login": "wrangler login"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

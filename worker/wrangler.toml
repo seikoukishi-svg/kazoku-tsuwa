@@ -1,0 +1,5 @@
+name = "kazoku-tsuwa-sender"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# 秘密(サービスアカウントJSON)は wrangler secret put FCM_SA で別途登録（ここには書かない）
