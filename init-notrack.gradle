@@ -1,0 +1,9 @@
+// 端末セキュリティが作る一時ファイルで入出力スナップショットが壊れるのを回避するため、
+// すべてのタスクで状態追跡(ハッシュ計算)を無効化する。
+allprojects {
+    tasks.configureEach {
+        try {
+            doNotTrackState("Workaround: endpoint security creates transient files that break Gradle input/output snapshotting")
+        } catch (Throwable ignored) {}
+    }
+}

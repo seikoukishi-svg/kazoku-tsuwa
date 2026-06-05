@@ -1,0 +1,182 @@
+:root {
+  --bg: #0f1419;
+  --panel: #1b2430;
+  --text: #e6edf3;
+  --muted: #9aa7b4;
+  --primary: #2e7d32;
+  --primary-press: #256528;
+  --danger: #c62828;
+  --accent: #1565c0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 24px 18px 48px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 28px;
+  margin: 8px 0 0;
+  text-align: center;
+}
+
+.phase {
+  text-align: center;
+  color: var(--muted);
+  margin: 4px 0 24px;
+  font-size: 13px;
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 20px 18px;
+  margin-bottom: 16px;
+}
+
+label {
+  display: block;
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+input[type="text"] {
+  width: 100%;
+  font-size: 18px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid #2c3a49;
+  background: #0e151d;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+
+button {
+  font-size: 18px;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  padding: 16px;
+  color: #fff;
+  cursor: pointer;
+  width: 100%;
+}
+
+button.primary {
+  background: var(--primary);
+}
+button.primary:active {
+  background: var(--primary-press);
+}
+
+.controls {
+  display: flex;
+  gap: 12px;
+  margin: 18px 0 8px;
+}
+
+button.round {
+  border-radius: 999px;
+  flex: 1;
+}
+
+#mic-btn {
+  background: var(--accent);
+}
+#mic-btn.off {
+  background: #5a6672;
+}
+button.danger {
+  background: var(--danger);
+}
+
+.status {
+  font-size: 18px;
+}
+#status {
+  font-weight: 700;
+}
+.room-label {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.hint,
+.invite {
+  color: var(--muted);
+  font-size: 13px;
+}
+.invite a {
+  color: #6db3ff;
+  word-break: break-all;
+}
+
+.error {
+  background: #3a1212;
+  color: #ffb4b4;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.lead {
+  font-size: 16px;
+  margin: 0 0 14px;
+}
+
+.me {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.me #me-name {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.member-grid {
+  display: grid;
+  gap: 12px;
+}
+.member-btn {
+  font-size: 20px;
+  padding: 18px;
+}
+
+button.link {
+  width: auto;
+  background: transparent;
+  color: #6db3ff;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 8px;
+}
+
+#peer-name {
+  font-weight: 700;
+  color: var(--text);
+}

@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 通話の呼び出し情報とICE候補。匿名ログイン済みの家族だけ読み書き可。
+    // doc ID は着信側のメンバーID（papa/mama/yuki/akiho）。
+    // ※家族内の閉じた利用を前提にした最小ルール。Phase 2 で宛先を厳格化する。
+    match /calls/{calleeId}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

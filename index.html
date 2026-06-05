@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
+    <title>家族通話</title>
+  </head>
+  <body>
+    <main id="app">
+      <h1>家族通話</h1>
+      <p class="phase">家族の電話帳</p>
+
+      <!-- 誰として使うか（初回／変更時） -->
+      <section id="setup-panel" class="panel hidden">
+        <p class="lead">このスマホはどなたが使いますか？</p>
+        <div id="member-choices" class="member-grid"></div>
+      </section>
+
+      <!-- ホーム（電話帳） -->
+      <section id="home-panel" class="panel hidden">
+        <p class="me">
+          あなた：<span id="me-name"></span>
+          <button id="change-me" class="link" type="button">変更</button>
+        </p>
+        <p class="lead">だれを呼びますか？</p>
+        <div id="contact-list" class="member-grid"></div>
+      </section>
+
+      <!-- 発信中 -->
+      <section id="calling-panel" class="panel hidden">
+        <p class="status"><span id="calling-name"></span> を呼び出し中…</p>
+        <button id="cancel-btn" class="round danger" type="button">取り消す</button>
+      </section>
+
+      <!-- 着信 -->
+      <section id="incoming-panel" class="panel hidden">
+        <p class="status"><span id="incoming-name"></span> さんから着信</p>
+        <div class="controls">
+          <button id="accept-btn" class="round primary" type="button">応答</button>
+          <button id="decline-btn" class="round danger" type="button">拒否</button>
+        </div>
+      </section>
+
+      <!-- 通話中 -->
+      <section id="call-panel" class="panel hidden">
+        <p class="status">状態：<span id="status">—</span></p>
+        <p class="room-label">相手：<span id="peer-name"></span></p>
+        <div class="controls">
+          <button id="mic-btn" class="round off" type="button">マイク OFF</button>
+          <button id="end-btn" class="round danger" type="button">通話終了</button>
+        </div>
+        <p class="hint">
+          通話開始時はミュートです。話すときは「マイク OFF」を押して ON にしてください。
+        </p>
+      </section>
+
+      <p id="error" class="error hidden"></p>
+    </main>
+
+    <audio id="remote-audio" autoplay playsinline></audio>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
