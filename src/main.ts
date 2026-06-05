@@ -93,8 +93,6 @@ async function ensureMedia(): Promise<MediaStream> {
     audio: true,
     video: false,
   });
-  // ハウリング防止のため、通話開始時はミュート（マイクOFF）から始める
-  localStream.getAudioTracks().forEach((t) => (t.enabled = false));
   return localStream;
 }
 
