@@ -15,7 +15,7 @@ import {
   type DocumentReference,
   type Unsubscribe,
 } from "firebase/firestore";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { db, auth, authReady, isConfigured } from "./firebase";
 
@@ -91,6 +91,38 @@ function updateMicButton() {
   const btn = $("mic-btn");
   btn.textContent = on ? "マイク ON" : "マイク OFF";
   btn.classList.toggle("off", !on);
+}
+
+// ===== 音声出力（受話口/スピーカー）ネイティブ制御 =====
+const AudioRoute = registerPlugin<{
+  earpiece: () => Promise<void>;
+  speaker: () => Promise<void>;
+  reset: () => Promise<void>;
+}>("AudioRoute");
+let speakerOn = false;
+
+async function applyAudioRoute() {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    if (speakerOn) await AudioRoute.speaker();
+    else await AudioRoute.earpiece();
+  } catch (e) {
+    console.warn("audio route failed", e);
+  }
+}
+async function resetAudioRoute() {
+  speakerOn = false;
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await AudioRoute.reset();
+  } catch {
+    /* ignore */
+  }
+}
+function updateSpeakerButton() {
+  const btn = $("speaker-btn");
+  btn.textContent = speakerOn ? "受話口" : "スピーカー";
+  btn.classList.toggle("off", speakerOn);
 }
 
 async function ensureMedia(): Promise<MediaStream> {
@@ -170,6 +202,7 @@ function createPeer(
         break;
       case "connected":
         setStatus("通話中");
+        void applyAudioRoute();
         break;
       case "disconnected":
         setStatus("切断（再接続待ち）");
@@ -196,6 +229,9 @@ function enterCallUI(otherId: string) {
   $("peer-name").textContent = nameOf(otherId);
   setStatus("接続中…");
   updateMicButton();
+  speakerOn = false;
+  updateSpeakerButton();
+  void applyAudioRoute();
   showPanel("call-panel");
 }
 
@@ -392,6 +428,7 @@ function cleanupPeer() {
   localStream = null;
   $("mic-btn").textContent = "マイク ON";
   $("mic-btn").classList.remove("off");
+  void resetAudioRoute();
 }
 
 async function deleteCallDoc(ref: DocumentReference, expectedCallId: string | null) {
@@ -535,6 +572,11 @@ $("mic-btn").addEventListener("click", () => {
   if (!track) return;
   track.enabled = !track.enabled;
   updateMicButton();
+});
+$("speaker-btn").addEventListener("click", () => {
+  speakerOn = !speakerOn;
+  updateSpeakerButton();
+  void applyAudioRoute();
 });
 $("end-btn").addEventListener("click", () => void hangUp());
 $("cancel-btn").addEventListener("click", () => void hangUp());
