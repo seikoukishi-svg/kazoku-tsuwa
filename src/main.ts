@@ -20,12 +20,12 @@ import { PushNotifications } from "@capacitor/push-notifications";
 import { db, auth, authReady, isConfigured } from "./firebase";
 
 // ===== 家族メンバー（固定）=====
-type Member = { id: string; name: string };
+type Member = { id: string; name: string; initial: string; color: string };
 const MEMBERS: Member[] = [
-  { id: "papa", name: "パパ" },
-  { id: "mama", name: "ママ" },
-  { id: "yuki", name: "ゆうき" },
-  { id: "akiho", name: "あきほ" },
+  { id: "papa", name: "パパ", initial: "パ", color: "#2e9e8f" },
+  { id: "mama", name: "ママ", initial: "マ", color: "#e0795f" },
+  { id: "yuki", name: "ゆうき", initial: "ゆ", color: "#4a90d9" },
+  { id: "akiho", name: "あきほ", initial: "あ", color: "#9b7ed0" },
 ];
 const nameOf = (id: string) => MEMBERS.find((m) => m.id === id)?.name ?? id;
 
@@ -85,12 +85,50 @@ function setStatus(s: string) {
   $("status").textContent = s;
 }
 
-function updateMicButton() {
-  const track = localStream?.getAudioTracks()[0];
-  const on = !!track && track.enabled;
-  const btn = $("mic-btn");
-  btn.textContent = on ? "マイク ON" : "マイク OFF";
-  btn.classList.toggle("off", !on);
+function setAvatar(elId: string, memberId: string) {
+  const m = MEMBERS.find((x) => x.id === memberId);
+  const el = $(elId);
+  el.textContent = m ? m.initial : "";
+  el.style.background = m ? m.color : "#9aa7b4";
+}
+
+function memberCard(m: Member, onClick: () => void): HTMLElement {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "member-card";
+  const av = document.createElement("span");
+  av.className = "avatar";
+  av.textContent = m.initial;
+  av.style.background = m.color;
+  const nm = document.createElement("span");
+  nm.className = "card-name";
+  nm.textContent = m.name;
+  const arrow = document.createElement("span");
+  arrow.className = "card-arrow";
+  arrow.textContent = "›";
+  card.append(av, nm, arrow);
+  card.addEventListener("click", onClick);
+  return card;
+}
+
+let timerInterval: ReturnType<typeof setInterval> | null = null;
+let callStartMs = 0;
+function startTimer() {
+  callStartMs = Date.now();
+  $("call-timer").textContent = "00:00";
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - callStartMs) / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    $("call-timer").textContent = `${mm}:${ss}`;
+  }, 1000);
+}
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
 }
 
 // ===== 音声出力（受話口/スピーカー）ネイティブ制御 =====
@@ -120,9 +158,7 @@ async function resetAudioRoute() {
   }
 }
 function updateSpeakerButton() {
-  const btn = $("speaker-btn");
-  btn.textContent = speakerOn ? "受話口" : "スピーカー";
-  btn.classList.toggle("off", speakerOn);
+  $("speaker-toggle").classList.toggle("on", speakerOn);
 }
 
 async function ensureMedia(): Promise<MediaStream> {
@@ -227,11 +263,12 @@ function createPeer(
 function enterCallUI(otherId: string) {
   peerId = otherId;
   $("peer-name").textContent = nameOf(otherId);
+  setAvatar("call-avatar", otherId);
   setStatus("接続中…");
-  updateMicButton();
   speakerOn = false;
   updateSpeakerButton();
   void applyAudioRoute();
+  startTimer();
   showPanel("call-panel");
 }
 
@@ -316,6 +353,7 @@ async function callTo(targetId: string) {
   appState = "calling";
   peerId = targetId;
   $("calling-name").textContent = nameOf(targetId);
+  setAvatar("calling-avatar", targetId);
   showPanel("calling-panel");
 
   createPeer(callRef, "callerCandidates", "calleeCandidates");
@@ -394,6 +432,7 @@ function startIncomingListener() {
       latestOffer = d.offer as RTCSessionDescriptionInit;
       currentCallId = (d.callId as string) ?? null;
       $("incoming-name").textContent = nameOf(d.from);
+      setAvatar("incoming-avatar", d.from);
       appState = "incoming";
       callRef = ref; // 拒否時にこの doc を消して発信側へ伝えるため
       showPanel("incoming-panel");
@@ -426,8 +465,7 @@ function cleanupPeer() {
   pendingCandidates = [];
   localStream?.getTracks().forEach((t) => t.stop());
   localStream = null;
-  $("mic-btn").textContent = "マイク ON";
-  $("mic-btn").classList.remove("off");
+  stopTimer();
   void resetAudioRoute();
 }
 
@@ -481,17 +519,14 @@ function renderSetup() {
   const box = $("member-choices");
   box.innerHTML = "";
   for (const m of MEMBERS) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "primary member-btn";
-    b.textContent = m.name;
-    b.addEventListener("click", () => {
-      myId = m.id;
-      localStorage.setItem(STORAGE_KEY, m.id);
-      restartIncoming();
-      goHome();
-    });
-    box.appendChild(b);
+    box.appendChild(
+      memberCard(m, () => {
+        myId = m.id;
+        localStorage.setItem(STORAGE_KEY, m.id);
+        restartIncoming();
+        goHome();
+      }),
+    );
   }
 }
 
@@ -500,12 +535,7 @@ function renderContacts() {
   box.innerHTML = "";
   for (const m of MEMBERS) {
     if (m.id === myId) continue;
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "primary member-btn";
-    b.textContent = `${m.name} を呼ぶ`;
-    b.addEventListener("click", () => void callTo(m.id));
-    box.appendChild(b);
+    box.appendChild(memberCard(m, () => void callTo(m.id)));
   }
 }
 
@@ -514,7 +544,6 @@ function goHome() {
   peerId = null;
   latestOffer = null;
   currentCallId = null;
-  $("me-name").textContent = nameOf(myId!);
   renderContacts();
   showPanel("home-panel");
   if (!incomingUnsub) startIncomingListener();
@@ -567,17 +596,14 @@ function restartIncoming() {
 }
 
 // ===== ボタン =====
-$("mic-btn").addEventListener("click", () => {
-  const track = localStream?.getAudioTracks()[0];
-  if (!track) return;
-  track.enabled = !track.enabled;
-  updateMicButton();
-});
 $("speaker-btn").addEventListener("click", () => {
   speakerOn = !speakerOn;
   updateSpeakerButton();
   void applyAudioRoute();
 });
+const notReady = () => showError("メッセージ機能は準備中です。");
+$("msg-home-btn").addEventListener("click", notReady);
+$("msg-call-btn").addEventListener("click", notReady);
 $("end-btn").addEventListener("click", () => void hangUp());
 $("cancel-btn").addEventListener("click", () => void hangUp());
 $("decline-btn").addEventListener("click", () => void hangUp());

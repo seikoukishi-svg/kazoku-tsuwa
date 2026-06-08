@@ -1,12 +1,11 @@
 :root {
-  --bg: #0f1419;
-  --panel: #1b2430;
-  --text: #e6edf3;
-  --muted: #9aa7b4;
-  --primary: #2e7d32;
-  --primary-press: #256528;
-  --danger: #c62828;
-  --accent: #1565c0;
+  --bg: #f3f6f4;
+  --card: #ffffff;
+  --text: #1f2d2b;
+  --muted: #6b7b78;
+  --green: #34a853;
+  --red: #e2483d;
+  --accent: #2e9e8f;
 }
 
 * {
@@ -25,158 +24,268 @@ body {
 #app {
   max-width: 480px;
   margin: 0 auto;
-  padding: 24px 18px 48px;
   min-height: 100vh;
 }
 
-h1 {
-  font-size: 28px;
-  margin: 8px 0 0;
-  text-align: center;
-}
-
-.phase {
-  text-align: center;
-  color: var(--muted);
-  margin: 4px 0 24px;
-  font-size: 13px;
-}
-
 .panel {
-  background: var(--panel);
-  border-radius: 16px;
-  padding: 20px 18px;
-  margin-bottom: 16px;
+  padding: 24px 18px 40px;
 }
 
-label {
-  display: block;
-  font-size: 14px;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-
-input[type="text"] {
-  width: 100%;
-  font-size: 18px;
-  padding: 14px;
-  border-radius: 12px;
-  border: 1px solid #2c3a49;
-  background: #0e151d;
-  color: var(--text);
-  margin-bottom: 14px;
-}
-
-button {
-  font-size: 18px;
-  font-weight: 600;
-  border: none;
-  border-radius: 12px;
-  padding: 16px;
-  color: #fff;
-  cursor: pointer;
-  width: 100%;
-}
-
-button.primary {
-  background: var(--primary);
-}
-button.primary:active {
-  background: var(--primary-press);
-}
-
-.controls {
-  display: flex;
-  gap: 12px;
-  margin: 18px 0 8px;
-}
-
-button.round {
-  border-radius: 999px;
-  flex: 1;
-}
-
-#mic-btn {
-  background: var(--accent);
-}
-#mic-btn.off {
-  background: #5a6672;
-}
-button.danger {
-  background: var(--danger);
-}
-
-.status {
-  font-size: 18px;
-}
-#status {
-  font-weight: 700;
-}
-.room-label {
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.hint,
-.invite {
-  color: var(--muted);
-  font-size: 13px;
-}
-.invite a {
-  color: #6db3ff;
-  word-break: break-all;
-}
-
-.error {
-  background: #3a1212;
-  color: #ffb4b4;
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-size: 14px;
-}
-
-.hidden {
-  display: none !important;
+.app-title {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 12px 0 4px;
 }
 
 .lead {
-  font-size: 16px;
-  margin: 0 0 14px;
+  font-size: 18px;
+  color: var(--muted);
+  margin: 8px 0 20px;
+  line-height: 1.4;
 }
 
-.me {
-  font-size: 15px;
-  color: var(--muted);
-  margin: 0 0 16px;
+.home-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-.me #me-name {
-  color: var(--text);
-  font-weight: 700;
-  font-size: 17px;
-}
-
-.member-grid {
-  display: grid;
-  gap: 12px;
-}
-.member-btn {
-  font-size: 20px;
-  padding: 18px;
+  justify-content: space-between;
 }
 
 button.link {
   width: auto;
   background: transparent;
-  color: #6db3ff;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 4px 8px;
+  color: var(--accent);
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 6px 8px;
+  cursor: pointer;
 }
 
-#peer-name {
+/* メンバーカード */
+.card-list {
+  display: grid;
+  gap: 14px;
+}
+
+.member-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  background: var(--card);
+  border: none;
+  border-radius: 18px;
+  padding: 16px 18px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  text-align: left;
+}
+.member-card:active {
+  background: #eef2f1;
+}
+
+.avatar {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 26px;
   font-weight: 700;
-  color: var(--text);
+}
+
+.card-name {
+  flex: 1;
+  font-size: 24px;
+  font-weight: 700;
+}
+.card-arrow {
+  color: #c2ccca;
+  font-size: 28px;
+}
+
+.msg-btn {
+  margin-top: 22px;
+  width: 100%;
+  background: #e7eef0;
+  color: #2b5560;
+  border: none;
+  border-radius: 16px;
+  padding: 16px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 全画面（発信中・着信・通話中） */
+.screen {
+  position: fixed;
+  inset: 0;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 64px 24px 48px;
+  color: #fff;
+  z-index: 5;
+}
+.calling-screen,
+.incoming-screen {
+  background: linear-gradient(180deg, #3f7fc4, #2f5fa6);
+}
+.incall-screen {
+  background: linear-gradient(180deg, #7fd0c4, #4fae9e);
+}
+
+.screen-top {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.avatar.big {
+  width: 120px;
+  height: 120px;
+  font-size: 52px;
+  background: rgba(255, 255, 255, 0.25);
+  margin-bottom: 12px;
+}
+
+.screen-name {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 8px 0 0;
+  text-align: center;
+}
+.screen-sub {
+  font-size: 18px;
+  opacity: 0.9;
+  margin: 0;
+}
+.status-mini {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.screen-actions {
+  display: flex;
+  gap: 64px;
+  justify-content: center;
+  padding-bottom: 12px;
+}
+.screen-actions.wide {
+  gap: 72px;
+}
+.circle-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+}
+.circle-btn .ico {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+}
+.circle-btn.green .ico {
+  background: var(--green);
+}
+.circle-btn.red .ico {
+  background: var(--red);
+}
+.circle-btn .lbl {
+  font-size: 15px;
+}
+
+/* 通話中の操作 */
+.incall-controls {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.row-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1f2d2b;
+  border: none;
+  border-radius: 16px;
+  padding: 16px 20px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toggle {
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  background: #cfd8d6;
+  position: relative;
+  transition: background 0.15s;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.toggle.on {
+  background: var(--green);
+}
+.toggle.on::after {
+  left: 23px;
+}
+
+.end-btn {
+  width: 100%;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: 18px;
+  padding: 20px;
+  font-size: 20px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.error {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 480px;
+  margin: 0 auto;
+  background: #fde8e8;
+  color: #c0392b;
+  padding: 14px 16px;
+  font-size: 14px;
+  text-align: center;
+  z-index: 20;
+}
+
+.hidden {
+  display: none !important;
 }

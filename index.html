@@ -10,54 +10,73 @@
   </head>
   <body>
     <main id="app">
-      <h1>家族通話</h1>
-      <p class="phase">家族の電話帳</p>
-
-      <!-- 誰として使うか（初回／変更時） -->
+      <!-- 自分を選ぶ -->
       <section id="setup-panel" class="panel hidden">
-        <p class="lead">このスマホはどなたが使いますか？</p>
-        <div id="member-choices" class="member-grid"></div>
+        <h1 class="app-title">家族通話</h1>
+        <p class="lead">このスマホは<br />どなたが使いますか？</p>
+        <div id="member-choices" class="card-list"></div>
       </section>
 
       <!-- ホーム（電話帳） -->
       <section id="home-panel" class="panel hidden">
-        <p class="me">
-          あなた：<span id="me-name"></span>
+        <div class="home-head">
+          <h1 class="app-title">家族通話</h1>
           <button id="change-me" class="link" type="button">変更</button>
-        </p>
-        <p class="lead">だれを呼びますか？</p>
-        <div id="contact-list" class="member-grid"></div>
+        </div>
+        <p class="lead">だれに電話しますか？</p>
+        <div id="contact-list" class="card-list"></div>
+        <button id="msg-home-btn" class="msg-btn" type="button">💬 メッセージ</button>
       </section>
 
       <!-- 発信中 -->
-      <section id="calling-panel" class="panel hidden">
-        <p class="status"><span id="calling-name"></span> を呼び出し中…</p>
-        <button id="cancel-btn" class="round danger" type="button">取り消す</button>
+      <section id="calling-panel" class="screen calling-screen hidden">
+        <div class="screen-top">
+          <div id="calling-avatar" class="avatar big"></div>
+          <p class="screen-name"><span id="calling-name"></span></p>
+          <p class="screen-sub">呼び出し中…</p>
+        </div>
+        <div class="screen-actions">
+          <button id="cancel-btn" class="circle-btn red" type="button">
+            <span class="ico">✕</span><span class="lbl">取り消す</span>
+          </button>
+        </div>
       </section>
 
-      <!-- 着信 -->
-      <section id="incoming-panel" class="panel hidden">
-        <p class="status"><span id="incoming-name"></span> さんから着信</p>
-        <div class="controls">
-          <button id="accept-btn" class="round primary" type="button">応答</button>
-          <button id="decline-btn" class="round danger" type="button">拒否</button>
+      <!-- 着信（電話風） -->
+      <section id="incoming-panel" class="screen incoming-screen hidden">
+        <div class="screen-top">
+          <div id="incoming-avatar" class="avatar big"></div>
+          <p class="screen-name"><span id="incoming-name"></span> から着信</p>
+          <p class="screen-sub">応答しますか？</p>
+        </div>
+        <div class="screen-actions wide">
+          <button id="accept-btn" class="circle-btn green" type="button">
+            <span class="ico">📞</span><span class="lbl">応答</span>
+          </button>
+          <button id="decline-btn" class="circle-btn red" type="button">
+            <span class="ico">⛔</span><span class="lbl">拒否</span>
+          </button>
         </div>
       </section>
 
       <!-- 通話中 -->
-      <section id="call-panel" class="panel hidden">
-        <p class="status">状態：<span id="status">—</span></p>
-        <p class="room-label">相手：<span id="peer-name"></span></p>
-        <div class="controls">
-          <button id="mic-btn" class="round" type="button">マイク ON</button>
-          <button id="speaker-btn" class="round" type="button">スピーカー</button>
+      <section id="call-panel" class="screen incall-screen hidden">
+        <div class="screen-top">
+          <div id="call-avatar" class="avatar big"></div>
+          <p class="screen-name"><span id="peer-name"></span> と通話中</p>
+          <p class="screen-sub">
+            <span id="call-timer">00:00</span>
+            <span id="status" class="status-mini"></span>
+          </p>
         </div>
-        <div class="controls">
-          <button id="end-btn" class="round danger" type="button">通話終了</button>
+        <div class="incall-controls">
+          <button id="speaker-btn" class="row-btn" type="button">
+            <span>🔊 スピーカー</span>
+            <span id="speaker-toggle" class="toggle"></span>
+          </button>
+          <button id="msg-call-btn" class="row-btn" type="button">💬 メッセージ</button>
         </div>
-        <p class="hint">
-          音は受話口（耳に当てる）から出ます。ハンズフリーにしたいときは「スピーカー」を押してください。
-        </p>
+        <button id="end-btn" class="end-btn" type="button">⛔ 終了</button>
       </section>
 
       <p id="error" class="error hidden"></p>
