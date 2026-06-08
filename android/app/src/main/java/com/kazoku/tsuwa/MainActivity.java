@@ -33,6 +33,15 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        // アプリを開いたら着信通知を消す（応答後に着信音が鳴り続けないように）
+        NotificationManager nm =
+            (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) nm.cancelAll();
+    }
+
     // 着信用チャンネル: 端末の着信音・高優先度・ロック画面表示・バイブ
     private void createIncomingCallChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
