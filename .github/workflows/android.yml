@@ -32,7 +32,15 @@ jobs:
       - name: Sync Capacitor (Android)
         run: npx cap sync android
 
+      - name: Decode signing keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > android/app/kazoku.jks
+
       - name: Build debug APK
+        env:
+          KEYSTORE_PATH: kazoku.jks
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           cd android
           chmod +x gradlew
