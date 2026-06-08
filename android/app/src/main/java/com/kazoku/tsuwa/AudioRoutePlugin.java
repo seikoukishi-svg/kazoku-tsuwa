@@ -1,5 +1,6 @@
 package com.kazoku.tsuwa;
 
+import android.app.NotificationManager;
 import android.content.Context;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
@@ -68,6 +69,16 @@ public class AudioRoutePlugin extends Plugin {
             }
             am.setMode(AudioManager.MODE_NORMAL);
         }
+        call.resolve();
+    }
+
+    // 着信音を止め、着信通知を消す（応答/拒否/終了時にJSから呼ぶ）
+    @PluginMethod
+    public void stopRingtone(PluginCall call) {
+        KazokuMessagingService.stopRinging();
+        NotificationManager nm =
+            (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) nm.cancel(1001);
         call.resolve();
     }
 }

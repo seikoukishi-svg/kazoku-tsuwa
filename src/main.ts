@@ -136,6 +136,7 @@ const AudioRoute = registerPlugin<{
   earpiece: () => Promise<void>;
   speaker: () => Promise<void>;
   reset: () => Promise<void>;
+  stopRingtone: () => Promise<void>;
 }>("AudioRoute");
 let speakerOn = false;
 
@@ -159,6 +160,12 @@ async function resetAudioRoute() {
 }
 function updateSpeakerButton() {
   $("speaker-toggle").classList.toggle("on", speakerOn);
+}
+
+// 着信音を止める（応答/拒否/終了時）。ネイティブ着信サービスの鳴動を停止。
+function stopRingtone() {
+  if (!Capacitor.isNativePlatform()) return;
+  AudioRoute.stopRingtone().catch((e) => console.warn("stopRingtone failed", e));
 }
 
 async function ensureMedia(): Promise<MediaStream> {
@@ -387,6 +394,7 @@ async function callTo(targetId: string) {
 async function acceptCall() {
   if (appState !== "incoming" || !myId || !peerId || !latestOffer) return;
   clearError();
+  stopRingtone();
   try {
     await ensureMedia();
   } catch {
@@ -489,6 +497,7 @@ async function deleteCallDoc(ref: DocumentReference, expectedCallId: string | nu
 // 自分から切る（発信取消・拒否・通話終了）。相手にも伝わるよう doc を削除。
 // 削除を待ってからホームへ戻す（待たずに掛け直すと前の削除が新通話を消す競合が起きるため）。
 async function hangUp() {
+  stopRingtone();
   const ref = callRef;
   const id = currentCallId;
   appState = "idle";
@@ -501,6 +510,7 @@ async function hangUp() {
 
 // 相手が切った場合（自分は doc を消さない）
 function endLocalOnly(msg: string) {
+  stopRingtone();
   appState = "idle";
   callRef = null;
   currentCallId = null;

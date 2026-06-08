@@ -141,15 +141,10 @@ export default {
       const message = {
         message: {
           token: toToken,
-          notification: {
-            title: fromName + " さんから着信",
-            body: "タップして応答",
-          },
+          // データのみ（通知ペイロードを付けない）→ アプリが閉じていても
+          // ネイティブの着信サービス(onMessageReceived)が起動し、全画面着信＋着信音を出せる。
           data: { type: "incoming_call", fromName: String(fromName) },
-          android: {
-            priority: "HIGH",
-            notification: { channelId: "incoming_call", sound: "default" },
-          },
+          android: { priority: "HIGH" },
         },
       };
       const fcmRes = await fetch(
