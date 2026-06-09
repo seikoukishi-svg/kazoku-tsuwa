@@ -7,8 +7,8 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
-import android.media.MediaPlayer;
 import android.media.RingtoneManager;
+import android.media.Ringtone;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -22,9 +22,9 @@ import java.util.Map;
 // 着信(data: type=incoming_call)を受けたら、全画面着信＋制御可能な着信音を出す。
 public class KazokuMessagingService extends MessagingService {
 
-    static final String CHANNEL_ID = "kazoku_call";
+    static final String CHANNEL_ID = "kazoku_call_v2";
     static final int NOTIF_ID = 1001;
-    static MediaPlayer player;
+    static Ringtone ringtone;
     static final Handler handler = new Handler(Looper.getMainLooper());
     static final Runnable autoStop = new Runnable() {
         @Override
@@ -41,7 +41,13 @@ public class KazokuMessagingService extends MessagingService {
             if (fromName == null || fromName.isEmpty()) fromName = "家族";
             ensureChannel();
             showIncomingCall(fromName);
-            startRinging();
+            final Context ctx = getApplicationContext();
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    startRinging(ctx);
+                }
+            });
         }
         // foreground の JS（通常の通話フロー）にも渡す
         super.onMessageReceived(remoteMessage);
@@ -57,7 +63,7 @@ public class KazokuMessagingService extends MessagingService {
         ch.setDescription("家族からの着信");
         ch.enableVibration(true);
         ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-        ch.setSound(null, null); // 着信音は MediaPlayer で制御するのでチャンネルは無音
+        ch.setSound(null, null); // 着信音は Ringtone で制御
         nm.createNotificationChannel(ch);
     }
 
@@ -86,7 +92,7 @@ public class KazokuMessagingService extends MessagingService {
         if (nm != null) nm.notify(NOTIF_ID, b.build());
     }
 
-    private void startRinging() {
+    private static void startRinging(Context ctx) {
         try {
             stopRinging();
             Uri ring = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
@@ -94,16 +100,21 @@ public class KazokuMessagingService extends MessagingService {
                 ring = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
             }
             if (ring == null) return;
-            player = new MediaPlayer();
-            player.setAudioAttributes(new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build());
-            player.setDataSource(this, ring);
-            player.setLooping(true);
-            player.prepare();
-            player.start();
-            handler.postDelayed(autoStop, 45000); // 45秒で自動停止（取りこぼし保険）
+
+            ringtone = RingtoneManager.getRingtone(ctx, ring);
+            if (ringtone == null) return;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                ringtone.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build());
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                ringtone.setLooping(true);
+            }
+            ringtone.play();
+            handler.postDelayed(autoStop, 45000); // 45秒で自動停止
         } catch (Exception e) {
             // ignore
         }
@@ -113,13 +124,12 @@ public class KazokuMessagingService extends MessagingService {
     static void stopRinging() {
         handler.removeCallbacks(autoStop);
         try {
-            if (player != null) {
-                player.stop();
-                player.release();
+            if (ringtone != null && ringtone.isPlaying()) {
+                ringtone.stop();
             }
         } catch (Exception e) {
             // ignore
         }
-        player = null;
+        ringtone = null;
     }
 }
