@@ -31,8 +31,27 @@ const nameOf = (id: string) => MEMBERS.find((m) => m.id === id)?.name ?? id;
 
 const STORAGE_KEY = "kazoku-my-member-id";
 const STALE_MS = 2 * 60 * 60 * 1000;
+// STUN: まず直接接続を試す / TURN: モバイル回線等で直接つながれない時に音声を中継する。
+// TURN は無料公開の Open Relay Project（登録不要）。声のみなので帯域は小さい。
 const ICE: RTCConfiguration = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+  iceServers: [
+    {
+      urls: [
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302",
+      ],
+    },
+    {
+      urls: [
+        "turn:openrelay.metered.ca:80",
+        "turn:openrelay.metered.ca:443",
+        "turns:openrelay.metered.ca:443?transport=tcp",
+      ],
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+  ],
+  iceCandidatePoolSize: 4,
 };
 
 const PUSH_WORKER_URL = "https://kazoku-tsuwa-sender.kazoku-tsuwa.workers.dev";
@@ -251,7 +270,13 @@ function createPeer(
         setStatus("切断（再接続待ち）");
         break;
       case "failed":
+        // 音声がつながらないまま無音で放置しない。終了して理由を表示する。
         setStatus("接続失敗");
+        void hangUp().then(() =>
+          showError(
+            "音声がつながりませんでした。電波状況を確認して、もう一度おかけください。",
+          ),
+        );
         break;
     }
   };
