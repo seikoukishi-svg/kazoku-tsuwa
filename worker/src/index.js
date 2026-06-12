@@ -130,6 +130,8 @@ export default {
       const idToken = body.idToken;
       const toToken = body.toToken;
       const fromName = body.fromName || "家族";
+      // type は許可リスト方式: 着信(incoming_call) / 取り消し(cancel_call) のみ
+      const type = body.type === "cancel_call" ? "cancel_call" : "incoming_call";
       if (!idToken || !toToken) return json({ error: "missing params" }, 400);
 
       const caller = await verifyIdToken(idToken, projectId);
@@ -143,7 +145,7 @@ export default {
           token: toToken,
           // データのみ（通知ペイロードを付けない）→ アプリが閉じていても
           // ネイティブの着信サービス(onMessageReceived)が起動し、全画面着信＋着信音を出せる。
-          data: { type: "incoming_call", fromName: String(fromName) },
+          data: { type: type, fromName: String(fromName) },
           android: { priority: "HIGH" },
         },
       };

@@ -30,7 +30,9 @@ const MEMBERS: Member[] = [
 const nameOf = (id: string) => MEMBERS.find((m) => m.id === id)?.name ?? id;
 
 const STORAGE_KEY = "kazoku-my-member-id";
-const STALE_MS = 2 * 60 * 60 * 1000;
+const STALE_MS = 2 * 60 * 60 * 1000; // 通話中(accepted)の残骸とみなす時間
+const RING_STALE_MS = 90 * 1000; // 呼び出し中(ringing)はこれを過ぎたら無効（幽霊着信防止）
+const CALL_TIMEOUT_MS = 60 * 1000; // 発信側: 応答が無ければ自動で取り消す
 // STUN: まず直接接続を試す / TURN: モバイル回線等で直接つながれない時に音声を中継する。
 // TURN は無料公開の Open Relay Project（登録不要）。声のみなので帯域は小さい。
 const ICE: RTCConfiguration = {
@@ -130,6 +132,14 @@ function memberCard(m: Member, onClick: () => void): HTMLElement {
   return card;
 }
 
+let callTimeout: ReturnType<typeof setTimeout> | null = null;
+function clearCallTimeout() {
+  if (callTimeout) {
+    clearTimeout(callTimeout);
+    callTimeout = null;
+  }
+}
+
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 let callStartMs = 0;
 function startTimer() {
@@ -156,6 +166,8 @@ const AudioRoute = registerPlugin<{
   speaker: () => Promise<void>;
   reset: () => Promise<void>;
   stopRingtone: () => Promise<void>;
+  startRingback: () => Promise<void>;
+  stopRingback: () => Promise<void>;
 }>("AudioRoute");
 let speakerOn = false;
 
@@ -187,6 +199,56 @@ function stopRingtone() {
   AudioRoute.stopRingtone().catch((e) => console.warn("stopRingtone failed", e));
 }
 
+// ===== 呼び出し音（発信側の「トゥルルル」）=====
+// スマホでは通話ストリーム（受話口）で鳴らす。PC(Web)テスト用にWeb Audioで代替。
+let rbCtx: AudioContext | null = null;
+let rbTimer: ReturnType<typeof setInterval> | null = null;
+
+function startRingback() {
+  stopRingbackWeb();
+  if (Capacitor.isNativePlatform()) {
+    AudioRoute.startRingback().catch(() => {});
+    return;
+  }
+  try {
+    rbCtx = new AudioContext();
+    const osc = rbCtx.createOscillator();
+    const gain = rbCtx.createGain();
+    osc.frequency.value = 400;
+    gain.gain.value = 0;
+    osc.connect(gain).connect(rbCtx.destination);
+    osc.start();
+    const beep = () => {
+      if (!rbCtx) return;
+      const t = rbCtx.currentTime;
+      gain.gain.setValueAtTime(0.08, t);
+      gain.gain.setValueAtTime(0, t + 1); // 1秒鳴って2秒休む
+    };
+    beep();
+    rbTimer = setInterval(beep, 3000);
+  } catch {
+    /* ignore */
+  }
+}
+
+function stopRingbackWeb() {
+  if (rbTimer) {
+    clearInterval(rbTimer);
+    rbTimer = null;
+  }
+  if (rbCtx) {
+    void rbCtx.close().catch(() => {});
+    rbCtx = null;
+  }
+}
+
+function stopRingback() {
+  stopRingbackWeb();
+  if (Capacitor.isNativePlatform()) {
+    AudioRoute.stopRingback().catch(() => {});
+  }
+}
+
 async function ensureMedia(): Promise<MediaStream> {
   if (localStream) return localStream;
   localStream = await navigator.mediaDevices.getUserMedia({
@@ -199,7 +261,9 @@ async function ensureMedia(): Promise<MediaStream> {
 function isStale(data: DocumentData): boolean {
   const ts = data.startedAt;
   if (!ts || typeof ts.toMillis !== "function") return false;
-  return Date.now() - ts.toMillis() > STALE_MS;
+  // 呼び出し中のまま放置された残骸は短時間で無効化（幽霊着信・発信ブロックの防止）
+  const limit = data.status === "ringing" ? RING_STALE_MS : STALE_MS;
+  return Date.now() - ts.toMillis() > limit;
 }
 
 async function addOrBufferCandidate(cand: RTCIceCandidateInit) {
@@ -293,6 +357,8 @@ function createPeer(
 }
 
 function enterCallUI(otherId: string) {
+  stopRingback();
+  clearCallTimeout();
   peerId = otherId;
   $("peer-name").textContent = nameOf(otherId);
   setAvatar("call-avatar", otherId);
@@ -305,7 +371,11 @@ function enterCallUI(otherId: string) {
 }
 
 // ===== 発信（自分→相手）=====
-async function sendIncomingPush(targetId: string) {
+// type: "incoming_call"=着信を鳴らす / "cancel_call"=取り消し（相手の鳴動を止める）
+async function sendIncomingPush(
+  targetId: string,
+  type: "incoming_call" | "cancel_call" = "incoming_call",
+) {
   if (!myId) return;
   try {
     const tokenSnap = await getDoc(doc(db, "tokens", targetId));
@@ -328,6 +398,7 @@ async function sendIncomingPush(targetId: string) {
         idToken,
         toToken,
         fromName: nameOf(myId),
+        type,
       }),
     });
 
@@ -388,6 +459,20 @@ async function callTo(targetId: string) {
   setAvatar("calling-avatar", targetId);
   showPanel("calling-panel");
 
+  // 受話口に切り替えて呼び出し音（トゥルルル）を鳴らす（耳に当てて待てる）
+  speakerOn = false;
+  void applyAudioRoute();
+  startRingback();
+
+  // 応答が無ければ自動で取り消す（呼び出しっぱなし防止）
+  callTimeout = setTimeout(() => {
+    if (appState === "calling" && currentCallId === callId) {
+      void hangUp().then(() =>
+        showError(`${nameOf(targetId)}は応答しませんでした。`),
+      );
+    }
+  }, CALL_TIMEOUT_MS);
+
   createPeer(callRef, "callerCandidates", "calleeCandidates");
   const offer = await pc!.createOffer();
   await pc!.setLocalDescription(offer);
@@ -435,10 +520,15 @@ async function acceptCall() {
   await flushCandidates();
   const answer = await pc!.createAnswer();
   await pc!.setLocalDescription(answer);
-  await updateDoc(callRef, {
-    answer: { type: answer.type, sdp: answer.sdp },
-    status: "accepted",
-  });
+  try {
+    await updateDoc(callRef, {
+      answer: { type: answer.type, sdp: answer.sdp },
+      status: "accepted",
+    });
+  } catch {
+    // 応答した瞬間に相手が取り消した（docが消えた）すれ違い
+    endLocalOnly("通話が終了しました");
+  }
 }
 
 // ===== 自分宛て着信の監視（常時）=====
@@ -473,12 +563,21 @@ function startIncomingListener() {
       endLocalOnly("");
     } else if (appState === "incall" && d.status === "ended") {
       endLocalOnly("通話が終了しました");
+    } else if (
+      (appState === "calling" || appState === "incall") &&
+      d.status === "ringing" &&
+      d.from !== myId
+    ) {
+      // 発信中・通話中に別の家族から着信が来た: 今は出られないので鳴動だけ止める
+      stopRingtone();
     }
   });
 }
 
 // ===== 終了系 =====
 function cleanupPeer() {
+  stopRingback();
+  clearCallTimeout();
   if (callUnsub) {
     callUnsub();
     callUnsub = null;
@@ -525,10 +624,14 @@ async function hangUp() {
   stopRingtone();
   const ref = callRef;
   const id = currentCallId;
+  // 呼び出し中に取り消した場合は、相手の鳴動を止める合図を送る
+  // （相手のアプリが閉じていても、ネイティブ側が cancel_call で止める）
+  const cancelTarget = appState === "calling" ? peerId : null;
   appState = "idle";
   callRef = null;
   currentCallId = null;
   cleanupPeer();
+  if (cancelTarget) void sendIncomingPush(cancelTarget, "cancel_call");
   if (ref) await deleteCallDoc(ref, id);
   goHome();
 }

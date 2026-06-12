@@ -4,6 +4,7 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.os.Build;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -70,6 +71,42 @@ public class AudioRoutePlugin extends Plugin {
             am.setMode(AudioManager.MODE_NORMAL);
         }
         call.resolve();
+    }
+
+    // ===== 呼び出し音（発信側の「トゥルルル」）=====
+    // 通話音声ストリームで鳴らすので、耳に当てた受話口から聞こえる。
+    static ToneGenerator ringback;
+
+    @PluginMethod
+    public void startRingback(PluginCall call) {
+        stopRingbackInternal();
+        try {
+            AudioManager am = am();
+            if (am != null) am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            ringback = new ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80);
+            ringback.startTone(ToneGenerator.TONE_SUP_RINGTONE);
+        } catch (Exception e) {
+            // ignore
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void stopRingback(PluginCall call) {
+        stopRingbackInternal();
+        call.resolve();
+    }
+
+    static void stopRingbackInternal() {
+        try {
+            if (ringback != null) {
+                ringback.stopTone();
+                ringback.release();
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        ringback = null;
     }
 
     // 着信音を止め、着信通知を消す（応答/拒否/終了時にJSから呼ぶ）

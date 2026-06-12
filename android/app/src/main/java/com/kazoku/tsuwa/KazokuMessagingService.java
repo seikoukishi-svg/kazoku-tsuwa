@@ -48,6 +48,12 @@ public class KazokuMessagingService extends MessagingService {
                     startRinging(ctx);
                 }
             });
+        } else if (data != null && "cancel_call".equals(data.get("type"))) {
+            // 発信者が取り消した: 鳴動と着信通知を止める（アプリが閉じていても効く）
+            stopRinging();
+            NotificationManager nm =
+                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) nm.cancel(NOTIF_ID);
         }
         // foreground の JS（通常の通話フロー）にも渡す
         super.onMessageReceived(remoteMessage);
