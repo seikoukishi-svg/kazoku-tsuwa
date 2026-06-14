@@ -41,12 +41,16 @@ const ICE: RTCConfiguration = {
       urls: [
         "stun:stun.l.google.com:19302",
         "stun:stun1.l.google.com:19302",
+        "stun:stun2.l.google.com:19302",
       ],
     },
+    // 登録不要の無料TURN（Open Relay）。複数ポートで冗長化。
+    // ※さらに確実にするには Cloudflare 無料TURN への切替が次の選択肢。
     {
       urls: [
         "turn:openrelay.metered.ca:80",
         "turn:openrelay.metered.ca:443",
+        "turn:openrelay.metered.ca:80?transport=tcp",
         "turns:openrelay.metered.ca:443?transport=tcp",
       ],
       username: "openrelayproject",
@@ -147,6 +151,14 @@ function clearCallTimeout() {
   }
 }
 
+let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+function clearReconnectTimeout() {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+}
+
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 let callStartMs = 0;
 function startTimer() {
@@ -175,6 +187,7 @@ const AudioRoute = registerPlugin<{
   stopRingtone: () => Promise<void>;
   startRingback: () => Promise<void>;
   stopRingback: () => Promise<void>;
+  requestIgnoreBattery: () => Promise<void>;
 }>("AudioRoute");
 let speakerOn = false;
 
@@ -335,10 +348,21 @@ function createPeer(
         break;
       case "connected":
         setStatus("通話中");
+        clearReconnectTimeout(); // 復帰したら自動終了タイマーを解除
         void applyAudioRoute();
         break;
       case "disconnected":
-        setStatus("切断（再接続待ち）");
+        // 一時的な電波低下の可能性。少し待って復帰しなければ終了する。
+        setStatus("接続が不安定です…");
+        if (!reconnectTimeout) {
+          reconnectTimeout = setTimeout(() => {
+            if (pc && pc.connectionState !== "connected") {
+              void hangUp().then(() =>
+                showError("電波が不安定で通話が切れました。もう一度おかけください。"),
+              );
+            }
+          }, 25000);
+        }
         break;
       case "failed":
         // 音声がつながらないまま無音で放置しない。終了して理由を表示する。
@@ -419,6 +443,10 @@ async function sendIncomingPush(
 async function callTo(targetId: string) {
   clearError();
   if (!myId) return;
+  if (typeof navigator.onLine === "boolean" && !navigator.onLine) {
+    showError("インターネットに接続されていません。Wi-Fiか電波を確認してください。");
+    return;
+  }
   try {
     await ensureMedia();
   } catch {
@@ -493,7 +521,11 @@ async function callTo(targetId: string) {
     }
     const d = snap.data();
     if (d.status === "ended") {
-      remoteEnded();
+      if (d.rejectReason === "busy") {
+        endLocalOnly(`${nameOf(targetId)}は今、ほかの通話中です。`);
+      } else {
+        remoteEnded();
+      }
       return;
     }
     if (d.answer && pc && !pc.currentRemoteDescription) {
@@ -558,13 +590,11 @@ function startIncomingListener() {
       d.from &&
       d.from !== myId &&
       !isStale(d);
-    // 新しい着信は、たとえ前の通話状態が固まっていても受け付ける
-    // （実際につながっている通話中だけは邪魔しない）。
-    if (
-      fresh &&
-      d.callId !== currentCallId &&
-      (appState === "idle" || !isLiveCall())
-    ) {
+    // 本当に通話中／発信中か（固まりは busy ではない）
+    const busy =
+      appState === "calling" || (appState === "incall" && isLiveCall());
+    if (fresh && d.callId !== currentCallId && !busy) {
+      // 新しい着信は、たとえ前の通話状態が固まっていても受け付ける
       if (appState !== "idle") cleanupPeer(); // 固まった残骸を掃除（docは消さない）
       peerId = d.from;
       latestOffer = d.offer as RTCSessionDescriptionInit;
@@ -574,17 +604,16 @@ function startIncomingListener() {
       appState = "incoming";
       callRef = ref; // 拒否時にこの doc を消して発信側へ伝えるため
       showPanel("incoming-panel");
+    } else if (fresh && d.callId !== currentCallId && busy) {
+      // 通話中・発信中に別の人から着信 → 相手に「通話中」を返す（自分は鳴らさない）
+      stopRingtone();
+      void updateDoc(ref, { status: "ended", rejectReason: "busy" }).catch(
+        () => {},
+      );
     } else if (appState === "incoming" && d.status === "ended") {
       endLocalOnly("");
     } else if (appState === "incall" && d.status === "ended") {
       endLocalOnly("通話が終了しました");
-    } else if (
-      (appState === "calling" || appState === "incall") &&
-      d.status === "ringing" &&
-      d.from !== myId
-    ) {
-      // 発信中・通話中に別の家族から着信が来た: 今は出られないので鳴動だけ止める
-      stopRingtone();
     }
   });
 }
@@ -593,6 +622,7 @@ function startIncomingListener() {
 function cleanupPeer() {
   stopRingback();
   clearCallTimeout();
+  clearReconnectTimeout();
   if (callUnsub) {
     callUnsub();
     callUnsub = null;
@@ -756,6 +786,13 @@ $("speaker-btn").addEventListener("click", () => {
 });
 const notReady = () => showError("メッセージ機能は準備中です。");
 $("msg-home-btn").addEventListener("click", notReady);
+$("battery-btn").addEventListener("click", () => {
+  if (!Capacitor.isNativePlatform()) {
+    showError("この設定はスマホアプリでのみ使えます。");
+    return;
+  }
+  AudioRoute.requestIgnoreBattery().catch(() => {});
+});
 $("msg-call-btn").addEventListener("click", notReady);
 $("end-btn").addEventListener("click", () => void hangUp());
 $("cancel-btn").addEventListener("click", () => void hangUp());

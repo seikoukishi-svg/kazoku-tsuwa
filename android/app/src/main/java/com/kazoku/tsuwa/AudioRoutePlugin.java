@@ -2,10 +2,14 @@ package com.kazoku.tsuwa;
 
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -42,10 +46,43 @@ public class AudioRoutePlugin extends Plugin {
         am.setSpeakerphoneOn(speakerphone);
     }
 
-    // 受話口（耳に当てる）から出す
+    // イヤホン（Bluetooth/有線）が繋がっていればそちらを優先。無ければ受話口。
+    private void routeEarpiecePreferHeadset() {
+        AudioManager am = am();
+        if (am == null) return;
+        am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                // 優先順位: BTヘッドセット > BT LE > 有線 > USB > 補聴器 > 受話口
+                int[] priority = new int[] {
+                    AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                    AudioDeviceInfo.TYPE_BLE_HEADSET,
+                    AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                    AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                    AudioDeviceInfo.TYPE_USB_HEADSET,
+                    AudioDeviceInfo.TYPE_HEARING_AID,
+                    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                };
+                for (int want : priority) {
+                    for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                        if (d.getType() == want) {
+                            am.setCommunicationDevice(d);
+                            return;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // フォールバックへ
+            }
+        }
+        // 旧端末: スピーカーだけはOFFにする（受話口/接続中ヘッドセットに流れる）
+        am.setSpeakerphoneOn(false);
+    }
+
+    // 受話口（耳に当てる）から出す。イヤホンがあればイヤホン優先。
     @PluginMethod
     public void earpiece(PluginCall call) {
-        route(AudioDeviceInfo.TYPE_BUILTIN_EARPIECE, false);
+        routeEarpiecePreferHeadset();
         call.resolve();
     }
 
@@ -116,6 +153,27 @@ public class AudioRoutePlugin extends Plugin {
         NotificationManager nm =
             (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.cancel(1001);
+        call.resolve();
+    }
+
+    // 電池最適化の除外をお願いする（着信が遅延/不達になるのを防ぐ）。
+    // 既に除外済みなら何もしない。ユーザーがダイアログで許可する。
+    @PluginMethod
+    public void requestIgnoreBattery(PluginCall call) {
+        try {
+            Context ctx = getContext();
+            String pkg = ctx.getPackageName();
+            PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                    && pm != null && !pm.isIgnoringBatteryOptimizations(pkg)) {
+                Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                i.setData(Uri.parse("package:" + pkg));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(i);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
         call.resolve();
     }
 }
