@@ -106,6 +106,13 @@ function setStatus(s: string) {
   $("status").textContent = s;
 }
 
+// 実際に通話がつながっている／つなぎ中か。固まり状態の自己判定に使う。
+function isLiveCall(): boolean {
+  if (!pc) return false;
+  const s = pc.connectionState;
+  return s === "connected" || s === "connecting";
+}
+
 function setAvatar(elId: string, memberId: string) {
   const m = MEMBERS.find((x) => x.id === memberId);
   const el = $(elId);
@@ -502,9 +509,11 @@ async function callTo(targetId: string) {
 
 // ===== 着信に応答（相手→自分）=====
 async function acceptCall() {
+  // 応答ボタンを押したら、状態に関わらず即座に鳴動を止める
+  stopRingtone();
+  stopRingback();
   if (appState !== "incoming" || !myId || !peerId || !latestOffer) return;
   clearError();
-  stopRingtone();
   try {
     await ensureMedia();
   } catch {
@@ -543,14 +552,20 @@ function startIncomingListener() {
       return;
     }
     const d = snap.data();
-    if (
-      appState === "idle" &&
+    const fresh =
       d.status === "ringing" &&
       d.offer &&
       d.from &&
       d.from !== myId &&
-      !isStale(d)
+      !isStale(d);
+    // 新しい着信は、たとえ前の通話状態が固まっていても受け付ける
+    // （実際につながっている通話中だけは邪魔しない）。
+    if (
+      fresh &&
+      d.callId !== currentCallId &&
+      (appState === "idle" || !isLiveCall())
     ) {
+      if (appState !== "idle") cleanupPeer(); // 固まった残骸を掃除（docは消さない）
       peerId = d.from;
       latestOffer = d.offer as RTCSessionDescriptionInit;
       currentCallId = (d.callId as string) ?? null;
@@ -759,6 +774,15 @@ $("change-me").addEventListener("click", () => {
 
 window.addEventListener("beforeunload", () => {
   if (callRef) void deleteCallDoc(callRef, currentCallId);
+});
+
+// 画面復帰時の自己修復: 通話状態なのに接続実体(pc)が無い＝固まり。
+// 着信中(incoming)は pc が無いのが正常なので除外する。
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (appState !== "idle" && appState !== "incoming" && !pc) {
+    endLocalOnly("");
+  }
 });
 
 // ===== 起動 =====

@@ -25,6 +25,8 @@ public class KazokuMessagingService extends MessagingService {
     static final String CHANNEL_ID = "kazoku_call_v2";
     static final int NOTIF_ID = 1001;
     static Ringtone ringtone;
+    // JSが先に「鳴り止め」を呼んだら、後から来る鳴らし始めを抑止する（レース対策）
+    static volatile boolean stopRequested = false;
     static final Handler handler = new Handler(Looper.getMainLooper());
     static final Runnable autoStop = new Runnable() {
         @Override
@@ -39,6 +41,7 @@ public class KazokuMessagingService extends MessagingService {
         if (data != null && "incoming_call".equals(data.get("type"))) {
             String fromName = data.get("fromName");
             if (fromName == null || fromName.isEmpty()) fromName = "家族";
+            stopRequested = false; // 新しい着信なので抑止フラグを解除
             ensureChannel();
             showIncomingCall(fromName);
             final Context ctx = getApplicationContext();
@@ -99,8 +102,9 @@ public class KazokuMessagingService extends MessagingService {
     }
 
     private static void startRinging(Context ctx) {
+        if (stopRequested) return; // 鳴らす前にJSが止めていたら鳴らさない
         try {
-            stopRinging();
+            stopRingingInternal();
             Uri ring = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
             if (ring == null) {
                 ring = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
@@ -128,7 +132,12 @@ public class KazokuMessagingService extends MessagingService {
 
     // 応答/拒否/終了時に JS から呼ばれて鳴り止む
     static void stopRinging() {
+        stopRequested = true; // これ以降の鳴らし始めを抑止（レース対策）
         handler.removeCallbacks(autoStop);
+        stopRingingInternal();
+    }
+
+    private static void stopRingingInternal() {
         try {
             if (ringtone != null && ringtone.isPlaying()) {
                 ringtone.stop();
