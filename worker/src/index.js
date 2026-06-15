@@ -114,6 +114,24 @@ async function getAccessToken(sa) {
   return j.access_token;
 }
 
+// FCM v1 のエラーが「トークン失効/不正」かを判定する。
+// 公式: UNREGISTERED（登録解除/再インストール）, INVALID_ARGUMENT（トークン不正）。
+function isInvalidToken(res, j) {
+  try {
+    if (res.ok) return false;
+    const status = j && j.error && j.error.status;
+    const details = (j && j.error && j.error.details) || [];
+    for (const d of details) {
+      if (d && (d.errorCode === "UNREGISTERED" || d.errorCode === "INVALID_ARGUMENT")) {
+        return true;
+      }
+    }
+    return status === "NOT_FOUND" || status === "UNREGISTERED";
+  } catch (e) {
+    return false;
+  }
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS")
@@ -132,6 +150,8 @@ export default {
       const fromName = body.fromName || "家族";
       // type は許可リスト方式: 着信(incoming_call) / 取り消し(cancel_call) のみ
       const type = body.type === "cancel_call" ? "cancel_call" : "incoming_call";
+      // callId: 着信とキャンセルを同じ通話に対応づける（古いキャンセルの誤爆防止）
+      const callId = String(body.callId || "");
       if (!idToken || !toToken) return json({ error: "missing params" }, 400);
 
       const caller = await verifyIdToken(idToken, projectId);
@@ -145,7 +165,7 @@ export default {
           token: toToken,
           // データのみ（通知ペイロードを付けない）→ アプリが閉じていても
           // ネイティブの着信サービス(onMessageReceived)が起動し、全画面着信＋着信音を出せる。
-          data: { type: type, fromName: String(fromName) },
+          data: { type: type, fromName: String(fromName), callId: callId },
           android: { priority: "HIGH" },
         },
       };
@@ -163,7 +183,11 @@ export default {
         },
       );
       const fcmJson = await fcmRes.json();
-      return json({ ok: fcmRes.ok, fcm: fcmJson }, fcmRes.ok ? 200 : 502);
+      // 相手トークンが失効/不正なら invalidToken を返す（発信側が再設定を案内できる）
+      return json(
+        { ok: fcmRes.ok, invalidToken: isInvalidToken(fcmRes, fcmJson), fcm: fcmJson },
+        fcmRes.ok ? 200 : 502,
+      );
     } catch (e) {
       return json({ error: String(e && e.message ? e.message : e) }, 500);
     }

@@ -27,6 +27,8 @@ public class KazokuMessagingService extends MessagingService {
     static Ringtone ringtone;
     // JSが先に「鳴り止め」を呼んだら、後から来る鳴らし始めを抑止する（レース対策）
     static volatile boolean stopRequested = false;
+    // 現在鳴っている着信のID。古いキャンセルが別の着信を止めるのを防ぐ。
+    static volatile String activeCallId = "";
     static final Handler handler = new Handler(Looper.getMainLooper());
     static final Runnable autoStop = new Runnable() {
         @Override
@@ -41,6 +43,8 @@ public class KazokuMessagingService extends MessagingService {
         if (data != null && "incoming_call".equals(data.get("type"))) {
             String fromName = data.get("fromName");
             if (fromName == null || fromName.isEmpty()) fromName = "家族";
+            String cid = data.get("callId");
+            activeCallId = cid != null ? cid : "";
             stopRequested = false; // 新しい着信なので抑止フラグを解除
             ensureChannel();
             showIncomingCall(fromName);
@@ -52,11 +56,15 @@ public class KazokuMessagingService extends MessagingService {
                 }
             });
         } else if (data != null && "cancel_call".equals(data.get("type"))) {
-            // 発信者が取り消した: 鳴動と着信通知を止める（アプリが閉じていても効く）
-            stopRinging();
-            NotificationManager nm =
-                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm != null) nm.cancel(NOTIF_ID);
+            // 発信者が取り消した。ただし「今鳴っている着信」と同じ callId の時だけ止める。
+            // 空・不一致のキャンセルは無視（古いキャンセルが別の着信を止める誤爆を防止）。
+            String cid = data.get("callId");
+            if (cid != null && !cid.isEmpty() && cid.equals(activeCallId)) {
+                stopRinging();
+                NotificationManager nm =
+                    (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) nm.cancel(NOTIF_ID);
+            }
         }
         // foreground の JS（通常の通話フロー）にも渡す
         super.onMessageReceived(remoteMessage);

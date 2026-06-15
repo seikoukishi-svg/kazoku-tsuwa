@@ -3,3 +3,7 @@ dist/
 .firebase/
 *.log
 .DS_Store
+# APKダウンロード/検証用の一時フォルダ
+_apk*/
+dist-apk*/
+_verify*/

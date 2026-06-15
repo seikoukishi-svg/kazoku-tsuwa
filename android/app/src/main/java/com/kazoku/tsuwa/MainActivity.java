@@ -29,6 +29,17 @@ public class MainActivity extends BridgeActivity {
                 1001
             );
         }
+
+        // Android 13+ は通知権限が無いと、閉じた状態での着信表示が出ない
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                    new String[]{ android.Manifest.permission.POST_NOTIFICATIONS },
+                    1002
+                );
+            }
+        }
     }
 
     @Override

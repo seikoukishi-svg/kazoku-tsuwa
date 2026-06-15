@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -153,6 +154,40 @@ public class AudioRoutePlugin extends Plugin {
         NotificationManager nm =
             (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.cancel(1001);
+        call.resolve();
+    }
+
+    // Android14+ の全画面通知（フルスクリーンインテント）が許可されているか。
+    @PluginMethod
+    public void checkFullScreenIntent(PluginCall call) {
+        boolean granted = true;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                NotificationManager nm =
+                    (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+                granted = nm == null || nm.canUseFullScreenIntent();
+            }
+        } catch (Exception e) {
+            // 不明時は granted 扱い（過度に警告しない）
+        }
+        JSObject ret = new JSObject();
+        ret.put("granted", granted);
+        call.resolve(ret);
+    }
+
+    // 全画面通知の許可設定画面を開く（Android14+）。
+    @PluginMethod
+    public void openFullScreenSettings(PluginCall call) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                Intent i = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT);
+                i.setData(Uri.parse("package:" + getContext().getPackageName()));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(i);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
         call.resolve();
     }
 
