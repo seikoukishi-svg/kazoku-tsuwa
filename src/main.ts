@@ -315,10 +315,17 @@ async function flushCandidates() {
   }
 }
 
-async function clearCandidates(ref: DocumentReference) {
+// 古い通話の候補だけを掃除する（今回の callId の候補は残す）。
+// 終了時の一括削除はやめ、発信時に「自分以外の callId」だけ消すことで
+// 「古い掃除が新しい候補を巻き込んで消す」競合を構造的に無くす。
+async function clearOldCandidates(ref: DocumentReference, keepCallId: string) {
   for (const name of ["callerCandidates", "calleeCandidates"]) {
     const docs = await getDocs(collection(ref, name));
-    await Promise.all(docs.docs.map((d) => deleteDoc(d.ref)));
+    await Promise.all(
+      docs.docs
+        .filter((d) => (d.data() as DocumentData).callId !== keepCallId)
+        .map((d) => deleteDoc(d.ref)),
+    );
   }
 }
 
@@ -329,11 +336,14 @@ function createPeer(
 ) {
   pc = new RTCPeerConnection(ICE);
   const localCol = collection(ref, localName);
+  // この通話の callId を固定でキャプチャ（後で別通話に変わっても汚染しない）
+  const myCallId = currentCallId;
 
   pc.onicecandidate = (e) => {
     if (!e.candidate) return;
     const c = e.candidate.toJSON();
     addDoc(localCol, {
+      callId: myCallId, // どの通話の経路情報かを明記
       candidate: c.candidate ?? "",
       sdpMid: c.sdpMid ?? null,
       sdpMLineIndex: c.sdpMLineIndex ?? null,
@@ -385,9 +395,11 @@ function createPeer(
 
   candUnsub = onSnapshot(collection(ref, remoteName), (snap) => {
     snap.docChanges().forEach((ch) => {
-      if (ch.type === "added") {
-        void addOrBufferCandidate(ch.doc.data() as RTCIceCandidateInit);
-      }
+      if (ch.type !== "added") return;
+      const data = ch.doc.data() as DocumentData;
+      // 自分の通話の候補だけ取り込む（古い通話の候補は無視）
+      if (data.callId !== myCallId) return;
+      void addOrBufferCandidate(data as RTCIceCandidateInit);
     });
   });
 }
@@ -523,7 +535,7 @@ async function callTo(targetId: string) {
     return;
   }
 
-  await clearCandidates(callRef);
+  await clearOldCandidates(callRef, callId);
   appState = "calling";
   peerId = targetId;
   $("calling-name").textContent = nameOf(targetId);
@@ -729,7 +741,7 @@ function cleanupPeer() {
 
 async function deleteCallDoc(ref: DocumentReference, expectedCallId: string | null) {
   try {
-    const deleted = await runTransaction(db, async (tx) => {
+    await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists()) return false;
       const d = snap.data();
@@ -738,7 +750,8 @@ async function deleteCallDoc(ref: DocumentReference, expectedCallId: string | nu
       tx.delete(ref);
       return true;
     });
-    if (deleted) await clearCandidates(ref);
+    // 候補の一括削除はここでは行わない（新しい通話の候補を巻き込む競合を防ぐ）。
+    // 古い候補は次の発信時に clearOldCandidates が callId 単位で掃除する。
   } catch (e) {
     console.warn("deleteCallDoc failed", e);
   }
