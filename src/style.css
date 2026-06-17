@@ -231,6 +231,11 @@ button.link {
   gap: 12px;
   margin-bottom: 16px;
 }
+
+/* メッセージ機能が完成するまで、通話中画面では誤タッチ防止のため隠す */
+#msg-call-btn {
+  display: none;
+}
 .row-btn {
   display: flex;
   align-items: center;

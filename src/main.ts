@@ -104,6 +104,7 @@ let pendingCandidates: RTCIceCandidateInit[] = [];
 let appState: "idle" | "calling" | "incoming" | "incall" = "idle";
 let peerId: string | null = null;
 let currentCallId: string | null = null;
+let acceptingCall = false;
 
 function setStatus(s: string) {
   $("status").textContent = s;
@@ -333,13 +334,15 @@ function createPeer(
   ref: DocumentReference,
   localName: string,
   remoteName: string,
+  callId: string,
 ) {
-  pc = new RTCPeerConnection(ICE);
+  const peer = new RTCPeerConnection(ICE);
+  pc = peer;
   const localCol = collection(ref, localName);
-  // この通話の callId を固定でキャプチャ（後で別通話に変わっても汚染しない）
-  const myCallId = currentCallId;
+  // この通話の callId を引数で固定する。グローバル currentCallId に依存しない。
+  const myCallId = callId;
 
-  pc.onicecandidate = (e) => {
+  peer.onicecandidate = (e) => {
     if (!e.candidate) return;
     const c = e.candidate.toJSON();
     addDoc(localCol, {
@@ -351,12 +354,14 @@ function createPeer(
     }).catch((err) => console.warn("candidate 送信に失敗", err));
   };
 
-  pc.ontrack = (e) => {
+  peer.ontrack = (e) => {
+    if (peer !== pc) return;
     $<HTMLAudioElement>("remote-audio").srcObject = e.streams[0];
   };
 
-  pc.onconnectionstatechange = () => {
-    switch (pc?.connectionState) {
+  peer.onconnectionstatechange = () => {
+    if (peer !== pc) return;
+    switch (peer.connectionState) {
       case "connecting":
         setStatus("接続中…");
         break;
@@ -371,7 +376,7 @@ function createPeer(
         setStatus("接続が不安定です…");
         if (!reconnectTimeout) {
           reconnectTimeout = setTimeout(() => {
-            if (pc && pc.connectionState !== "connected") {
+            if (peer === pc && peer.connectionState !== "connected") {
               void hangUp().then(() =>
                 showError("電波が不安定で通話が切れました。もう一度おかけください。"),
               );
@@ -382,18 +387,21 @@ function createPeer(
       case "failed":
         // 音声がつながらないまま無音で放置しない。終了して理由を表示する。
         setStatus("接続失敗");
-        void hangUp().then(() =>
-          showError(
-            "音声がつながりませんでした。電波状況を確認して、もう一度おかけください。",
-          ),
-        );
+        if (peer === pc) {
+          void hangUp().then(() =>
+            showError(
+              "音声がつながりませんでした。電波状況を確認して、もう一度おかけください。",
+            ),
+          );
+        }
         break;
     }
   };
 
-  localStream?.getTracks().forEach((t) => pc!.addTrack(t, localStream!));
+  localStream?.getTracks().forEach((t) => peer.addTrack(t, localStream!));
 
   candUnsub = onSnapshot(collection(ref, remoteName), (snap) => {
+    if (peer !== pc) return;
     snap.docChanges().forEach((ch) => {
       if (ch.type !== "added") return;
       const data = ch.doc.data() as DocumentData;
@@ -404,7 +412,7 @@ function createPeer(
   });
 }
 
-function enterCallUI(otherId: string) {
+function enterCallUI(otherId: string, peer: RTCPeerConnection = pc!) {
   stopRingback();
   clearCallTimeout();
   peerId = otherId;
@@ -419,7 +427,7 @@ function enterCallUI(otherId: string) {
   // 一定時間つながらなければ固まりとみなして終了（ゾンビ状態の防止）
   clearConnectWatchdog();
   connectWatchdog = setTimeout(() => {
-    if (pc && pc.connectionState !== "connected") {
+    if (peer === pc && peer.connectionState !== "connected") {
       void hangUp().then(() =>
         showError("つながりませんでした。電波状況を確認して、もう一度おかけください。"),
       );
@@ -527,11 +535,13 @@ async function callTo(targetId: string) {
     console.error(e);
     showError("発信に失敗しました。通信環境を確認してください。");
     callRef = null;
+    currentCallId = null;
     return;
   }
   if (!claimed) {
     showError(`${nameOf(targetId)}は今、ほかの通話中か呼び出し中です。`);
     callRef = null;
+    currentCallId = null;
     return;
   }
 
@@ -556,18 +566,34 @@ async function callTo(targetId: string) {
     }
   }, CALL_TIMEOUT_MS);
 
-  createPeer(callRef, "callerCandidates", "calleeCandidates");
-  const offer = await pc!.createOffer();
-  await pc!.setLocalDescription(offer);
-  await updateDoc(callRef, { offer: { type: offer.type, sdp: offer.sdp } });
+  try {
+    createPeer(callRef, "callerCandidates", "calleeCandidates", callId);
+    const peer = pc;
+    if (!peer) throw new Error("peer was not created");
+    const offer = await peer.createOffer();
+    if (peer !== pc || currentCallId !== callId) return;
+    await peer.setLocalDescription(offer);
+    if (peer !== pc || currentCallId !== callId) return;
+    await updateDoc(callRef, { offer: { type: offer.type, sdp: offer.sdp } });
+  } catch (e) {
+    console.error(e);
+    if (currentCallId === callId) {
+      await hangUp();
+      showError("発信準備に失敗しました。もう一度おかけください。");
+    }
+    return;
+  }
+
   void sendIncomingPush(targetId, "incoming_call", callId);
 
+  let handlingAnswer = false;
   callUnsub = onSnapshot(callRef, (snap) => {
     if (!snap.exists()) {
-      remoteEnded();
+      if (currentCallId === callId) remoteEnded();
       return;
     }
     const d = snap.data();
+    if (d.callId !== callId) return;
     if (d.status === "ended") {
       if (d.rejectReason === "busy") {
         endLocalOnly(`${nameOf(targetId)}は今、ほかの通話中です。`);
@@ -576,12 +602,27 @@ async function callTo(targetId: string) {
       }
       return;
     }
-    if (d.answer && pc && !pc.currentRemoteDescription) {
+    if (d.answer && !handlingAnswer) {
+      const peer = pc;
+      if (!peer || peer.currentRemoteDescription) return;
+      handlingAnswer = true;
       void (async () => {
-        await pc!.setRemoteDescription(d.answer);
-        await flushCandidates();
-        appState = "incall";
-        enterCallUI(targetId);
+        try {
+          if (peer !== pc || currentCallId !== callId) return;
+          await peer.setRemoteDescription(d.answer as RTCSessionDescriptionInit);
+          if (peer !== pc || currentCallId !== callId) return;
+          await flushCandidates();
+          if (peer !== pc || currentCallId !== callId) return;
+          appState = "incall";
+          enterCallUI(targetId, peer);
+        } catch (e) {
+          console.warn("answer handling failed", e);
+          if (peer === pc && currentCallId === callId) {
+            void hangUp().then(() =>
+              showError("通話の接続に失敗しました。もう一度おかけください。"),
+            );
+          }
+        }
       })();
     }
   });
@@ -593,10 +634,17 @@ async function acceptCall() {
   stopRingtone();
   stopRingback();
   if (appState !== "incoming" || !myId || !peerId) return;
+  if (acceptingCall) return;
+  acceptingCall = true;
   clearError();
 
   const expectedCallId = currentCallId;
   const expectedPeer = peerId;
+  if (!expectedCallId) {
+    acceptingCall = false;
+    endLocalOnly("通話情報が古いため応答できませんでした。もう一度かけ直してください。");
+    return;
+  }
   const ref = doc(db, "calls", myId);
 
   // 応答前に最新の doc を確認。表示中の着信と「別の通話」に化けていたら応答しない。
@@ -613,11 +661,13 @@ async function acceptCall() {
       fd.status !== "ringing" ||
       !fd.offer
     ) {
+      acceptingCall = false;
       endLocalOnly("通話は終了しました。");
       return;
     }
     freshOffer = fd.offer as RTCSessionDescriptionInit;
   } catch {
+    acceptingCall = false;
     endLocalOnly("通話の確認に失敗しました。もう一度お試しください。");
     return;
   }
@@ -625,22 +675,27 @@ async function acceptCall() {
   try {
     await ensureMedia();
   } catch {
+    acceptingCall = false;
     showError("マイクの使用を許可してください。");
     return;
   }
 
   callRef = ref;
-  appState = "incall";
-  enterCallUI(expectedPeer);
 
-  createPeer(ref, "calleeCandidates", "callerCandidates");
-  await pc!.setRemoteDescription(freshOffer);
-  await flushCandidates();
-  const answer = await pc!.createAnswer();
-  await pc!.setLocalDescription(answer);
-
-  // answer 書き込みもトランザクションで同一性を再確認してから行う
   try {
+    createPeer(ref, "calleeCandidates", "callerCandidates", expectedCallId);
+    const peer = pc;
+    if (!peer) throw new Error("peer was not created");
+    await peer.setRemoteDescription(freshOffer);
+    if (peer !== pc || currentCallId !== expectedCallId) return;
+    await flushCandidates();
+    if (peer !== pc || currentCallId !== expectedCallId) return;
+    const answer = await peer.createAnswer();
+    if (peer !== pc || currentCallId !== expectedCallId) return;
+    await peer.setLocalDescription(answer);
+    if (peer !== pc || currentCallId !== expectedCallId) return;
+
+    // answer 書き込みもトランザクションで同一性を再確認してから行う
     const ok = await runTransaction(db, async (tx) => {
       const s = await tx.get(ref);
       const d = s.data();
@@ -661,9 +716,18 @@ async function acceptCall() {
     });
     if (!ok) {
       endLocalOnly("通話は終了しました。");
+      return;
     }
-  } catch {
-    endLocalOnly("通話が終了しました");
+    if (peer !== pc || currentCallId !== expectedCallId) return;
+    appState = "incall";
+    enterCallUI(expectedPeer, peer);
+  } catch (e) {
+    console.warn("acceptCall failed", e);
+    if (currentCallId === expectedCallId) {
+      endLocalOnly("通話の接続に失敗しました。もう一度お試しください。");
+    }
+  } finally {
+    acceptingCall = false;
   }
 }
 
@@ -679,7 +743,9 @@ function startIncomingListener() {
       return;
     }
     const d = snap.data();
+    const incomingCallId = typeof d.callId === "string" ? d.callId : "";
     const fresh =
+      incomingCallId.length > 0 &&
       d.status === "ringing" &&
       d.offer &&
       d.from &&
@@ -688,23 +754,23 @@ function startIncomingListener() {
     // idle 以外はすべて busy 扱い（応答直後など接続前の通話を新着信で壊さない）。
     // 固まり状態の回復は「接続ウォッチドッグ」と「復帰時の自己修復」に任せる。
     const busy = appState !== "idle";
-    if (fresh && d.callId !== currentCallId && !busy) {
+    if (fresh && incomingCallId !== currentCallId && !busy) {
       peerId = d.from;
-      currentCallId = (d.callId as string) ?? null;
+      currentCallId = incomingCallId;
       $("incoming-name").textContent = nameOf(d.from);
       setAvatar("incoming-avatar", d.from);
       appState = "incoming";
       callRef = ref; // 拒否時にこの doc を消して発信側へ伝えるため
       showPanel("incoming-panel");
-    } else if (fresh && d.callId !== currentCallId && busy) {
+    } else if (fresh && incomingCallId !== currentCallId && busy) {
       // 通話中・発信中に別の人から着信 → 相手に「通話中」を返す（自分は鳴らさない）
       stopRingtone();
       void updateDoc(ref, { status: "ended", rejectReason: "busy" }).catch(
         () => {},
       );
-    } else if (appState === "incoming" && d.status === "ended") {
+    } else if (d.callId === currentCallId && appState === "incoming" && d.status === "ended") {
       endLocalOnly("");
-    } else if (appState === "incall" && d.status === "ended") {
+    } else if (d.callId === currentCallId && appState === "incall" && d.status === "ended") {
       endLocalOnly("通話が終了しました");
     }
   });
@@ -712,6 +778,7 @@ function startIncomingListener() {
 
 // ===== 終了系 =====
 function cleanupPeer() {
+  acceptingCall = false;
   stopRingback();
   clearCallTimeout();
   clearReconnectTimeout();
