@@ -1,15 +1,27 @@
 package com.kazoku.tsuwa;
 
+import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.net.Uri;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -19,6 +31,10 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "AudioRoute")
 public class AudioRoutePlugin extends Plugin {
     private static PowerManager.WakeLock proximityLock;
+    private static SensorManager sensorManager;
+    private static SensorEventListener proximityListener;
+    private static View proximityShield;
+    private static boolean proximityNear = false;
 
     private AudioManager am() {
         return (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
@@ -98,7 +114,7 @@ public class AudioRoutePlugin extends Plugin {
     // 通常モードへ戻す（通話終了時）
     @PluginMethod
     public void reset(PluginCall call) {
-        releaseProximityLock();
+        stopProximityProtection();
         AudioManager am = am();
         if (am != null) {
             try {
@@ -118,6 +134,7 @@ public class AudioRoutePlugin extends Plugin {
     public void enableProximity(PluginCall call) {
         boolean supported = false;
         try {
+            hideSystemBarsForCall();
             PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
             supported = pm != null && pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK);
             if (supported && (proximityLock == null || !proximityLock.isHeld())) {
@@ -128,6 +145,7 @@ public class AudioRoutePlugin extends Plugin {
                 proximityLock.setReferenceCounted(false);
                 proximityLock.acquire();
             }
+            startProximitySensorFallback();
         } catch (Exception e) {
             supported = false;
         }
@@ -138,8 +156,143 @@ public class AudioRoutePlugin extends Plugin {
 
     @PluginMethod
     public void disableProximity(PluginCall call) {
-        releaseProximityLock();
+        stopProximityProtection();
         call.resolve();
+    }
+
+    private void startProximitySensorFallback() {
+        if (proximityListener != null) return;
+        sensorManager = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager == null) return;
+        Sensor sensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY);
+        if (sensor == null) return;
+
+        proximityListener = new SensorEventListener() {
+            @Override
+            public void onSensorChanged(SensorEvent event) {
+                if (event.values == null || event.values.length == 0) return;
+                float nearThreshold = Math.min(event.sensor.getMaximumRange(), 5.0f);
+                boolean near = event.values[0] < nearThreshold;
+                if (near == proximityNear) return;
+                proximityNear = near;
+                Activity activity = getActivity();
+                if (activity == null) return;
+                activity.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (proximityNear) {
+                            showProximityShield();
+                        } else {
+                            hideProximityShield();
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void onAccuracyChanged(Sensor sensor, int accuracy) {
+                // ignore
+            }
+        };
+        sensorManager.registerListener(proximityListener, sensor, SensorManager.SENSOR_DELAY_NORMAL);
+    }
+
+    private void stopProximityProtection() {
+        try {
+            if (sensorManager != null && proximityListener != null) {
+                sensorManager.unregisterListener(proximityListener);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        sensorManager = null;
+        proximityListener = null;
+        proximityNear = false;
+        Activity activity = getActivity();
+        if (activity != null) {
+            activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    hideProximityShield();
+                    showSystemBarsAfterCall();
+                }
+            });
+        }
+        releaseProximityLock();
+    }
+
+    private void showProximityShield() {
+        Activity activity = getActivity();
+        if (activity == null || proximityShield != null) return;
+        Window window = activity.getWindow();
+        if (window == null) return;
+        View decor = window.getDecorView();
+        if (!(decor instanceof ViewGroup)) return;
+
+        proximityShield = new View(activity);
+        proximityShield.setBackgroundColor(Color.BLACK);
+        proximityShield.setClickable(true);
+        proximityShield.setFocusable(true);
+        ((ViewGroup) decor).addView(
+            proximityShield,
+            new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        );
+    }
+
+    private static void hideProximityShield() {
+        try {
+            if (proximityShield != null && proximityShield.getParent() instanceof ViewGroup) {
+                ((ViewGroup) proximityShield.getParent()).removeView(proximityShield);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        proximityShield = null;
+    }
+
+    private void hideSystemBarsForCall() {
+        Activity activity = getActivity();
+        if (activity == null) return;
+        Window window = activity.getWindow();
+        if (window == null) return;
+        window.addFlags(WindowManager.LayoutParams.FLAG_IGNORE_CHEEK_PRESSES);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                controller.setSystemBarsBehavior(
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                );
+            }
+        } else {
+            window.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            );
+        }
+    }
+
+    private void showSystemBarsAfterCall() {
+        Activity activity = getActivity();
+        if (activity == null) return;
+        Window window = activity.getWindow();
+        if (window == null) return;
+        window.clearFlags(WindowManager.LayoutParams.FLAG_IGNORE_CHEEK_PRESSES);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+            }
+        } else {
+            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        }
     }
 
     private static void releaseProximityLock() {
