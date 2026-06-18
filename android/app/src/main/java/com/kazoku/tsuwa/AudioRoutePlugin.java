@@ -18,6 +18,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 @CapacitorPlugin(name = "AudioRoute")
 public class AudioRoutePlugin extends Plugin {
+    private static PowerManager.WakeLock proximityLock;
 
     private AudioManager am() {
         return (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
@@ -97,6 +98,7 @@ public class AudioRoutePlugin extends Plugin {
     // 通常モードへ戻す（通話終了時）
     @PluginMethod
     public void reset(PluginCall call) {
+        releaseProximityLock();
         AudioManager am = am();
         if (am != null) {
             try {
@@ -109,6 +111,52 @@ public class AudioRoutePlugin extends Plugin {
             am.setMode(AudioManager.MODE_NORMAL);
         }
         call.resolve();
+    }
+
+    // 受話口で耳に当てた時、近接センサーで画面を消してステータスバー誤操作を防ぐ。
+    @PluginMethod
+    public void enableProximity(PluginCall call) {
+        boolean supported = false;
+        try {
+            PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            supported = pm != null && pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK);
+            if (supported && (proximityLock == null || !proximityLock.isHeld())) {
+                proximityLock = pm.newWakeLock(
+                    PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
+                    "KazokuTsuwa:Proximity"
+                );
+                proximityLock.setReferenceCounted(false);
+                proximityLock.acquire();
+            }
+        } catch (Exception e) {
+            supported = false;
+        }
+        JSObject ret = new JSObject();
+        ret.put("supported", supported);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void disableProximity(PluginCall call) {
+        releaseProximityLock();
+        call.resolve();
+    }
+
+    private static void releaseProximityLock() {
+        try {
+            if (proximityLock != null && proximityLock.isHeld()) {
+                proximityLock.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY);
+            }
+        } catch (Exception e) {
+            try {
+                if (proximityLock != null && proximityLock.isHeld()) {
+                    proximityLock.release();
+                }
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
+        proximityLock = null;
     }
 
     // ===== 呼び出し音（発信側の「トゥルルル」）=====

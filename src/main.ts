@@ -187,6 +187,8 @@ const AudioRoute = registerPlugin<{
   earpiece: () => Promise<void>;
   speaker: () => Promise<void>;
   reset: () => Promise<void>;
+  enableProximity: () => Promise<{ supported: boolean }>;
+  disableProximity: () => Promise<void>;
   stopRingtone: () => Promise<void>;
   startRingback: () => Promise<void>;
   stopRingback: () => Promise<void>;
@@ -196,11 +198,25 @@ const AudioRoute = registerPlugin<{
 }>("AudioRoute");
 let speakerOn = false;
 
+async function applyProximityLock() {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    if (appState === "incall" && !speakerOn) {
+      await AudioRoute.enableProximity();
+    } else {
+      await AudioRoute.disableProximity();
+    }
+  } catch (e) {
+    console.warn("proximity lock failed", e);
+  }
+}
+
 async function applyAudioRoute() {
   if (!Capacitor.isNativePlatform()) return;
   try {
     if (speakerOn) await AudioRoute.speaker();
     else await AudioRoute.earpiece();
+    await applyProximityLock();
   } catch (e) {
     console.warn("audio route failed", e);
   }
@@ -209,6 +225,7 @@ async function resetAudioRoute() {
   speakerOn = false;
   if (!Capacitor.isNativePlatform()) return;
   try {
+    await AudioRoute.disableProximity();
     await AudioRoute.reset();
   } catch {
     /* ignore */
